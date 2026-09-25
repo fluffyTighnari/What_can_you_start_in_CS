@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件管理系统</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; }
+        .container { max-width: 800px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 4px; }
+        h2 { color: #555; font-size: 1.2em; margin-top: 0; }
+        input[type="text"] { width: 100%; padding: 8px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }
+        textarea { width: 100%; padding: 8px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; resize: vertical; min-height: 100px; }
+        button { background-color: #4CAF50; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+        button:hover { background-color: #45a049; }
+        .response { margin-top: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 4px; white-space: pre-wrap; }
+        .delete-btn { background-color: #f44336; }
+        .delete-btn:hover { background-color: #da190b; }
+        .put-btn { background-color: #2196F3; }
+        .put-btn:hover { background-color: #0b7dda; }
+        .login-btn { background-color: #ff9800; }
+        .login-btn:hover { background-color: #f57c00; }
+        .logout-btn { background-color: #9e9e9e; }
+        .logout-btn:hover { background-color: #757575; }
+        .hidden { display: none; }
+        .login-status { text-align: right; margin-bottom: 20px; padding: 10px; background-color: #e3f2fd; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>文件管理系统</h1>
+
+        <div class="login-status">
+            <div id="loginForm">
+                <h2>登录</h2>
+                <input type="text" id="userName" placeholder="请输入您的姓名">
+                <button class="login-btn" onclick="handleLogin()">登录</button>
+                <div class="response" id="loginResponse"></div>
+            </div>
+            <div id="userInfo" class="hidden">
+                <p>欢迎，<span id="displayName"></span></p>
+                <button class="logout-btn" onclick="handleLogout()">退出登录</button>
+            </div>
+        </div>
+
+        <div id="fileManagement" class="hidden">
+            <div class="section">
+                <h2>查看文件</h2>
+                <input type="text" id="getFileName" placeholder="请输入文件名">
+                <button onclick="handleGetRequest()">查看文件</button>
+                <div class="response" id="getResponse"></div>
+            </div>
+            <div class="section">
+                <h2>创建文件</h2>
+                <input type="text" id="postFileName" placeholder="请输入文件名">
+                <button onclick="handlePostRequest()">创建文件</button>
+                <div class="response" id="postResponse"></div>
+            </div>
+            <div class="section">
+                <h2>更新文件</h2>
+                <input type="text" id="putFileName" placeholder="请输入文件名">
+                <textarea id="fileContent" placeholder="请输入文件内容"></textarea>
+                <button class="put-btn" onclick="handlePutRequest()">更新文件</button>
+                <div class="response" id="putResponse"></div>
+            </div>
+            <div class="section">
+                <h2>删除文件</h2>
+                <input type="text" id="deleteFileName" placeholder="请输入文件名">
+                <button class="delete-btn" onclick="handleDeleteRequest()">删除文件</button>
+                <div class="response" id="deleteResponse"></div>
+            </div>
+            <div class="section">
+                <h2>文件列表</h2>
+                <button onclick="listFiles()">列出我的文件</button>
+                <div class="response" id="listResponse"></div>
+            </div>
+            <div class="section">
+                <h2>成员列表</h2>
+                <button onclick="listMembers()">列出已登录成员</button>
+                <div class="response" id="membersResponse"></div>
+            </div>
+            <div class="section">
+                <h2>上传文件</h2>
+                <p>支持任意类型（图片、PDF、ZIP 等），按扩展名识别类型。</p>
+                <input type="file" id="uploadFileInput">
+                <input type="text" id="uploadSaveAs" placeholder="保存为文件名（留空则用原文件名）">
+                <button onclick="handleFileUpload()">上传</button>
+                <div class="response" id="uploadResponse"></div>
+            </div>
+            <div class="section">
+                <h2>执行CGI程序</h2>
+                <p>执行exec目录中的可执行文件，输出结果将显示在这里。</p>
+                <input type="text" id="cgiFileName" placeholder="请输入可执行文件名">
+                <button onclick="handleCgiRequest()">执行</button>
+                <div class="response" id="cgiResponse"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.onload = function() { checkLoginStatus(); };
+
+        function checkLoginStatus() {
+            fetch('/checklogin', { method: 'GET', credentials: 'include' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.loggedIn) {
+                        document.getElementById('loginForm').classList.add('hidden');
+                        document.getElementById('userInfo').classList.remove('hidden');
+                        document.getElementById('fileManagement').classList.remove('hidden');
+                        document.getElementById('displayName').textContent = data.user;
+                    } else {
+                        document.getElementById('loginForm').classList.remove('hidden');
+                        document.getElementById('userInfo').classList.add('hidden');
+                        document.getElementById('fileManagement').classList.add('hidden');
+                    }
+                })
+                .catch(function() {
+                    document.getElementById('loginForm').classList.remove('hidden');
+                    document.getElementById('userInfo').classList.add('hidden');
+                    document.getElementById('fileManagement').classList.add('hidden');
+                });
+        }
+
+        function handleLogin() {
+            var name = document.getElementById('userName').value;
+            if (!name) {
+                document.getElementById('loginResponse').textContent = '请输入您的姓名';
+                return;
+            }
+            fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'name=' + encodeURIComponent(name),
+                credentials: 'include'
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    document.getElementById('loginResponse').textContent = '登录成功';
+                    document.getElementById('loginForm').classList.add('hidden');
+                    document.getElementById('userInfo').classList.remove('hidden');
+                    document.getElementById('fileManagement').classList.remove('hidden');
+                    document.getElementById('displayName').textContent = name;
+                } else {
+                    document.getElementById('loginResponse').textContent = '登录失败: ' + (data.message || '');
+                }
+            })
+            .catch(function(e) {
+                document.getElementById('loginResponse').textContent = '错误: ' + e.message;
+            });
+        }
+
+        function handleLogout() {
+            fetch('/logout', { method: 'GET', credentials: 'include' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data && data.success) {
+                        document.getElementById('loginForm').classList.remove('hidden');
+                        document.getElementById('userInfo').classList.add('hidden');
+                        document.getElementById('fileManagement').classList.add('hidden');
+                    }
+                })
+                .catch(function() {});
+        }
+
+        function apiFetch(url, options) {
+            options = options || {};
+            options.credentials = 'include';
+            return fetch(url, options);
+        }
+
+        function handleGetRequest() {
+            var fileName = document.getElementById('getFileName').value;
+            if (!fileName) {
+                document.getElementById('getResponse').textContent = '请输入文件名';
+                return;
+            }
+            apiFetch('/' + encodeURIComponent(fileName), { method: 'GET' })
+                .then(function(r) {
+                    if (!r.ok) return r.text().then(function(t) { throw new Error(t || 'File Not Found'); });
+                    return r.text();
+                })
+                .then(function(data) { document.getElementById('getResponse').textContent = data; })
+                .catch(function(e) { document.getElementById('getResponse').textContent = '错误: ' + e.message; });
+        }
+
+        function handlePostRequest() {
+            var fileName = document.getElementById('postFileName').value;
+            if (!fileName) {
+                document.getElementById('postResponse').textContent = '请输入文件名';
+                return;
+            }
+            apiFetch('/' + encodeURIComponent(fileName), { method: 'POST' })
+                .then(function(r) {
+                    if (!r.ok) return r.text().then(function(t) { throw new Error(t || 'File Already Exists'); });
+                    return r.text();
+                })
+                .then(function(data) { document.getElementById('postResponse').textContent = data; })
+                .catch(function(e) { document.getElementById('postResponse').textContent = '错误: ' + e.message; });
+        }
+
+        function handlePutRequest() {
+            var fileName = document.getElementById('putFileName').value;
+            var content = document.getElementById('fileContent').value;
+            if (!fileName) {
+                document.getElementById('putResponse').textContent = '请输入文件名';
+                return;
+            }
+            apiFetch('/' + encodeURIComponent(fileName), { method: 'PUT', body: content })
+                .then(function(r) {
+                    if (!r.ok) return r.text().then(function(t) { throw new Error(t || 'File Not Found'); });
+                    return r.text();
+                })
+                .then(function(data) { document.getElementById('putResponse').textContent = data; })
+                .catch(function(e) { document.getElementById('putResponse').textContent = '错误: ' + e.message; });
+        }
+
+        function handleDeleteRequest() {
+            var fileName = document.getElementById('deleteFileName').value;
+            if (!fileName) {
+                document.getElementById('deleteResponse').textContent = '请输入文件名';
+                return;
+            }
+            apiFetch('/' + encodeURIComponent(fileName), { method: 'DELETE' })
+                .then(function(r) {
+                    if (!r.ok) return r.text().then(function(t) { throw new Error(t && t.trim() ? t : 'File Not Found'); });
+                    return r.text();
+                })
+                .then(function(data) { document.getElementById('deleteResponse').textContent = data; })
+                .catch(function(e) {
+                    var msg = (e && e.message) ? e.message : '请求失败';
+                    document.getElementById('deleteResponse').textContent = '错误: ' + msg;
+                });
+        }
+
+        function listFiles() {
+            apiFetch('/list', { method: 'GET' })
+                .then(function(r) {
+                    if (!r.ok) return r.text().then(function(t) { throw new Error(t || 'Error'); });
+                    return r.text();
+                })
+                .then(function(data) { document.getElementById('listResponse').textContent = data; })
+                .catch(function(e) { document.getElementById('listResponse').textContent = '错误: ' + e.message; });
+        }
+
+        function listMembers() {
+            apiFetch('/members', { method: 'GET' })
+                .then(function(r) {
+                    if (!r.ok) return r.text().then(function(t) { throw new Error(t || 'Error'); });
+                    return r.text();
+                })
+                .then(function(data) { document.getElementById('membersResponse').textContent = data; })
+                .catch(function(e) { document.getElementById('membersResponse').textContent = '错误: ' + e.message; });
+        }
+
+        function handleFileUpload() {
+            var fileInput = document.getElementById('uploadFileInput');
+            var saveAs = document.getElementById('uploadSaveAs').value.trim();
+            var file = fileInput && fileInput.files[0];
+            if (!file) {
+                document.getElementById('uploadResponse').textContent = '请先选择要上传的文件';
+                return;
+            }
+            var filename = saveAs || file.name;
+            if (!filename) {
+                document.getElementById('uploadResponse').textContent = '请输入保存的文件名';
+                return;
+            }
+            document.getElementById('uploadResponse').textContent = '上传中...';
+            apiFetch('/' + encodeURIComponent(filename), {
+                method: 'PUT',
+                body: file,
+                credentials: 'include'
+            })
+            .then(function(r) {
+                if (!r.ok) return r.text().then(function(t) { throw new Error(t || 'Upload failed'); });
+                return r.text();
+            })
+            .then(function(data) {
+                document.getElementById('uploadResponse').textContent = data || '上传成功';
+            })
+            .catch(function(e) {
+                document.getElementById('uploadResponse').textContent = '错误: ' + (e && e.message ? e.message : '请求失败');
+            });
+        }
+
+        function handleCgiRequest() {
+            var fileName = document.getElementById('cgiFileName').value;
+            if (!fileName) {
+                document.getElementById('cgiResponse').textContent = '请输入可执行文件名';
+                return;
+            }
+            apiFetch('/cgi/' + encodeURIComponent(fileName), {
+                method: 'GET',
+                credentials: 'include'
+            })
+            .then(function(r) {
+                if (!r.ok) return r.text().then(function(t) { throw new Error(t || 'CGI execution failed'); });
+                return r.text();
+            })
+            .then(function(data) { document.getElementById('cgiResponse').textContent = data; })
+            .catch(function(e) { document.getElementById('cgiResponse').textContent = '错误: ' + e.message; });
+        }
+    </script>
+</body>
+</html>

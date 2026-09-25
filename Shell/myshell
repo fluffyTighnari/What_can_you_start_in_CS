@@ -1,0 +1,237 @@
+#include<stdio.h>
+#include<string.h>
+#include<stdlib.h>
+#include<unistd.h>
+#include<sys/wait.h>
+#include<sys/types.h>
+#include<signal.h>
+#include<errno.h>
+
+#define MAX_INPUT 1024
+#define MAX_ARGUMENTS 64
+
+int bg_count = 0;
+pid_t bg_pids[MAX_ARGUMENTS] = {0};
+
+typedef struct Command{
+    char* split_command[MAX_ARGUMENTS];
+    int size_of_command;
+    int pipe;
+    int background;
+}Command;
+
+void print_prompt();
+void clean_up_processes();
+void handle_child(int signal);
+Command deal_with_input(char* input);
+void execute_command(Command cmd);
+void execute_pipe_command(Command cmd1, Command cmd2);
+char* getinput();
+
+int main(){
+    signal(SIGCHLD, handle_child);
+    Command cmd;
+    char* input = NULL;
+
+    while(1){
+        clean_up_processes();
+        print_prompt();
+
+        input = getinput();
+        if(strlen(input) == 0){
+            free(input);
+            continue;
+        }
+
+        cmd = deal_with_input(input);
+
+        if(cmd.size_of_command > 0 && strcmp(cmd.split_command[0], "exit") == 0){
+            free(input);
+            exit(0);
+        }
+
+        if(cmd.size_of_command > 0 && strcmp(cmd.split_command[0], "cd") == 0){
+            if(cmd.size_of_command < 2){
+                fprintf(stderr, "cd: 缺少参数\n");
+            } else if(chdir(cmd.split_command[1]) != 0){
+                perror("cd");
+            }
+            free(input);
+            continue;
+        }
+
+        if(cmd.pipe == 0){
+            execute_command(cmd);
+        } else {
+            int index_pipe = -1;
+            for(int i = 0; i < cmd.size_of_command; i++){
+                if(strcmp(cmd.split_command[i], "|") == 0){
+                    index_pipe = i;
+                    break;
+                }
+            }
+            if(index_pipe <= 0 || index_pipe >= cmd.size_of_command - 1){
+                fprintf(stderr, "管道语法错误\n");
+                free(input);
+                continue;
+            }
+
+            Command cmd1;
+            cmd1.size_of_command = index_pipe;
+            cmd1.pipe = 0;
+            cmd1.background = 0;
+            int index = 0;
+            for(int i = 0; i < cmd1.size_of_command; i++){
+                cmd1.split_command[i] = cmd.split_command[index++];
+            }
+            cmd1.split_command[cmd1.size_of_command] = NULL; 
+
+            Command cmd2;
+            cmd2.size_of_command = cmd.size_of_command - index_pipe - 1;
+            cmd2.pipe = 0;
+            cmd2.background = 0;
+            index++;
+            for(int i = 0; i < cmd2.size_of_command; i++){
+                cmd2.split_command[i] = cmd.split_command[index++];
+            }
+            cmd2.split_command[cmd2.size_of_command] = NULL;
+
+            execute_pipe_command(cmd1, cmd2);
+        }
+        free(input);
+    }
+    return 0;
+}
+
+void handle_child(int signal){
+    int status;
+    while(waitpid(-1, &status, WNOHANG) > 0);
+}
+
+void clean_up_processes(){
+    int new_count = 0;
+    for (int i = 0; i < bg_count; i++) {
+        if (bg_pids[i] > 0) {
+            if (kill(bg_pids[i], 0) == -1 && errno == ESRCH) {
+                bg_pids[i] = 0;
+            } else {
+                bg_pids[new_count++] = bg_pids[i];
+            }
+        }
+    }
+    bg_count = new_count;
+}
+
+void print_prompt(){
+    char current_working_directory[1024];
+    if(getcwd(current_working_directory, sizeof(current_working_directory)) != NULL){
+        printf("\033[1;32m%s\033[0m $ ", current_working_directory);
+    } else {
+        printf("myshell $ ");
+    }
+    fflush(stdout);
+}
+
+char* getinput(){
+    char* input = (char*)malloc(MAX_INPUT * sizeof(char));
+    if (input == NULL) {
+        perror("malloc");
+        exit(1);
+    }
+    if(fgets(input, MAX_INPUT, stdin) == NULL){
+        if(feof(stdin)){
+            free(input);
+            exit(0);
+        } else {
+            perror("fgets");
+            free(input);
+            exit(1);
+        }
+    }
+    input[strcspn(input, "\n")] = '\0';
+    return input;
+}
+
+Command deal_with_input(char* input){
+    Command cmd;
+    cmd.size_of_command = 0;
+    cmd.pipe = 0;
+    cmd.background = 0;
+
+    char* token = strtok(input, " ");
+    while(token != NULL && cmd.size_of_command < MAX_ARGUMENTS - 1){
+        if(strcmp(token, "&") == 0){
+            cmd.background = 1;
+        } else {
+            if(strcmp(token, "|") == 0){
+                cmd.pipe = 1;
+            }
+            cmd.split_command[cmd.size_of_command++] = token;
+        }
+        token = strtok(NULL, " ");
+    }
+    cmd.split_command[cmd.size_of_command] = NULL;
+    return cmd;
+}
+
+void execute_command(Command cmd){
+    pid_t pid = fork();
+    if(pid == 0){
+        execvp(cmd.split_command[0], cmd.split_command);
+        perror("execvp");
+        fprintf(stderr, "执行失败: %s\n", cmd.split_command[0]);
+        exit(1);
+    } else if(pid < 0){
+        perror("fork");
+    } else {
+        if(cmd.background == 1){
+            if(bg_count < MAX_ARGUMENTS){
+                bg_pids[bg_count++] = pid;
+                printf("[%d] %d\n", bg_count, pid);
+            } else {
+                fprintf(stderr, "后台进程数量超出限制\n");
+                waitpid(pid, NULL, 0); 
+            }
+        } else {
+            int status;
+            waitpid(pid, &status, 0);
+        }
+    }
+}
+
+void execute_pipe_command(Command cmd1, Command cmd2){
+    int pipefd[2];
+    if(pipe(pipefd) == -1){
+        perror("pipe");
+        return;
+    }
+
+    pid_t pid1 = fork();
+    if(pid1 == 0){
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO); 
+        close(pipefd[1]); 
+        execvp(cmd1.split_command[0], cmd1.split_command);
+        perror("execvp");
+        fprintf(stderr, "命令未找到: %s\n", cmd1.split_command[0]);
+        exit(1);
+    }
+
+    pid_t pid2 = fork();
+    if(pid2 == 0){
+        close(pipefd[1]);
+        dup2(pipefd[0], STDIN_FILENO);
+        close(pipefd[0]);
+        execvp(cmd2.split_command[0], cmd2.split_command);
+        perror("execvp");
+        fprintf(stderr, "命令未找到: %s\n", cmd2.split_command[0]);
+        exit(1);
+    }
+
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+    int status1, status2;
+    waitpid(pid1, &status1, 0);
+    waitpid(pid2, &status2, 0);
+}

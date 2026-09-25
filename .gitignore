@@ -1,0 +1,47 @@
+# ===== 编译产物 =====
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.d
+
+# ===== 可执行文件 =====
+*.exe
+*.out
+*.app
+# Linux/macOS 无后缀可执行（与源码同名的除外，按需自行保留）
+database/database
+
+# ===== 日志 =====
+*.log
+
+# ===== 运行时数据文件 =====
+# 数据库文件
+database/sql.db
+database/*.db
+
+# 文件系统镜像
+documents system + web/disk.img
+documents system + web/*.img
+
+# ===== IDE / 编辑器 =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== 调试相关 =====
+*.pdb
+*.ilk
+*.idb
+*.ipdb
+*.stackdump
+core
+core.*
+
+# ===== Claude Code 本地配置 =====
+.claude/
